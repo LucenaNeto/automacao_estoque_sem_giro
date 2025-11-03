@@ -1,0 +1,7 @@
+Metadata-Version: 2.4
+Name: estoque-sem-giro
+Version: 0.1.0
+Summary: Automação: extrair EUD/BOT/QDB (A,C,E,I,J), gerar CSV consolidado e por PDV.
+Requires-Python: >=3.10
+Requires-Dist: openpyxl>=3.1
+Requires-Dist: tzdata>=2024.1

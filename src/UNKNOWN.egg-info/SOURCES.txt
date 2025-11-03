@@ -1,0 +1,16 @@
+README.md
+pyproject.toml
+src/UNKNOWN.egg-info/PKG-INFO
+src/UNKNOWN.egg-info/SOURCES.txt
+src/UNKNOWN.egg-info/dependency_links.txt
+src/UNKNOWN.egg-info/top_level.txt
+src/estoque_sem_giro/__init__.py
+src/estoque_sem_giro/archiver.py
+src/estoque_sem_giro/cli.py
+src/estoque_sem_giro/config.py
+src/estoque_sem_giro/excel_reader.py
+src/estoque_sem_giro/extractor.py
+src/estoque_sem_giro/logging_config.py
+src/estoque_sem_giro/pipeline.py
+src/estoque_sem_giro/types.py
+src/estoque_sem_giro/writers.py

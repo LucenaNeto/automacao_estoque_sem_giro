@@ -1,0 +1,2 @@
+openpyxl>=3.1
+tzdata>=2024.1

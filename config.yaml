@@ -1,0 +1,14 @@
+
+---
+
+# 4) `config.yaml` (opcional)
+
+```yaml
+timezone: "America/Recife"
+expected_sheets: ["EUD", "BOT", "QDB"]
+column_letters: { A: "SKU", C: "DESCRIÇÃO", E: "CURVA", I: "PDV", J: "ESTOQUE_ATUAL" }
+final_fields: ["PDV", "SKU", "DESCRIÇÃO", "MARCA", "CURVA", "ESTOQUE_ATUAL"]
+output_basename: "Estoque_sem_giro"
+generate_by_pdv: true
+preview_max_rows: 3
+fallback_data_only_false: true

@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "estoque-sem-giro"
+version = "0.1.0"
+description = "Automação: extrair EUD/BOT/QDB (A,C,E,I,J), gerar CSV consolidado e por PDV."
+requires-python = ">=3.10"
+dependencies = ["openpyxl>=3.1", "tzdata>=2024.1"]
+
+[project.scripts]
+estoque-sem-giro = "estoque_sem_giro.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
