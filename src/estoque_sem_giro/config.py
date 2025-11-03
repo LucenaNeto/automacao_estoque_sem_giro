@@ -41,6 +41,10 @@ def load_config() -> Config:
         generate_by_pdv=True,
         preview_max_rows=3,
         enable_fallback=True,
+        #adicionando novas configurações para relatórios futuros
+        report_folder_prefix="relatorios_finalizado",
+        report_sheet_main="Estoque sem Giro",
+        report_sheet_disc="Descontinuados",
     )
 
 def ensure_dirs(cfg: Config) -> None:

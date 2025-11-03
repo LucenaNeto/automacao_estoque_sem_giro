@@ -6,7 +6,7 @@ from .config import Config, ensure_dirs
 from .logging_config import setup_logging
 from .excel_reader import open_workbook, preview_sheet
 from .extractor import extract_all
-from .writers import write_consolidated_csv, write_csvs_by_pdv
+from .writers import write_consolidated_csv, write_csvs_by_pdv, write_reports_xlsx_by_pdv
 from .archiver import archive_xlsx
 
 def is_excel(p: Path) -> bool:
@@ -84,6 +84,12 @@ def process_latest(cfg: Config) -> bool:
         paths = write_csvs_by_pdv(records, cfg)
         logging.info("[OK] %d CSVs por PDV gerados.", len(paths))
 
+    
+    reports = write_reports_xlsx_by_pdv(records, cfg)
+    
+    logging.info("[OK] %d relatórios Excel por PDV gerados.", len(reports))
+    
+    
     try:
         archived = archive_xlsx(xlsx, cfg.archive_dir)
         logging.info("[OK] Arquivado: %s", archived)
