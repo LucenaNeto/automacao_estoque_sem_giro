@@ -2,15 +2,23 @@ from __future__ import annotations
 
 from pathlib import Path
 import logging
-from .config import Config, ensure_dirs
+# Adicionado 'yesterday_str' para a nova linha de log
+from .config import Config, ensure_dirs, yesterday_str
 from .logging_config import setup_logging
 from .excel_reader import open_workbook, preview_sheet
-from .extractor import extract_all
-from .writers import write_consolidated_csv, write_csvs_by_pdv, write_reports_xlsx_by_pdv
+from .extractor import extract_all, extract_discontinued_all
+from .writers import (
+    write_consolidated_csv,
+    write_csvs_by_pdv,
+    write_reports_xlsx_by_pdv,
+    write_discontinued_csvs_by_pdv,
+)
 from .archiver import archive_xlsx
+
 
 def is_excel(p: Path) -> bool:
     return p.is_file() and p.suffix.lower() == ".xlsx" and not p.name.startswith("~$")
+
 
 def list_excels(input_dir: Path) -> list[Path]:
     if not input_dir.exists():
@@ -19,9 +27,11 @@ def list_excels(input_dir: Path) -> list[Path]:
     xs.sort(key=lambda x: (x.stat().st_mtime, x.name))
     return xs
 
+
 def latest_excel(input_dir: Path) -> Path | None:
     xs = list_excels(input_dir)
     return xs[-1] if xs else None
+
 
 def process_latest(cfg: Config) -> bool:
     setup_logging()
@@ -45,9 +55,11 @@ def process_latest(cfg: Config) -> bool:
     for sheet in cfg.expected_sheets:
         if sheet in wb.sheetnames:
             try:
-                samples = preview_sheet(wb[sheet], cols=("A","C","E","I","J"), max_rows=cfg.preview_max_rows)
+                samples = preview_sheet(
+                    wb[sheet], cols=("A", "C", "E", "I", "J"), max_rows=cfg.preview_max_rows
+                )
                 if samples:
-                    header = " | ".join(("A","C","E","I","J"))
+                    header = " | ".join(("A", "C", "E", "I", "J"))
                     logging.info("Prévia %s: %s", sheet, header)
                     for row in samples:
                         logging.info(" | ".join(row))
@@ -55,6 +67,8 @@ def process_latest(cfg: Config) -> bool:
                 pass
 
     records = extract_all(wb, cfg.expected_sheets)
+    # extrai descontinuados no mesmo workbook (BLOCO 1 - já estava no seu código)
+    discontinued = extract_discontinued_all(wb, cfg.expected_sheets)
     try:
         wb.close()
     except Exception:
@@ -66,6 +80,8 @@ def process_latest(cfg: Config) -> bool:
         try:
             wb2 = open_workbook(xlsx, data_only=False)
             records = extract_all(wb2, cfg.expected_sheets)
+            # NOVO: extrai descontinuados no fallback (BLOCO 2)
+            discontinued = extract_discontinued_all(wb2, cfg.expected_sheets)
             try:
                 wb2.close()
             except Exception:
@@ -74,7 +90,9 @@ def process_latest(cfg: Config) -> bool:
             logging.exception("Falha no fallback: %s", e)
 
     if not records:
-        logging.error("Ainda sem registros. Reabra no Excel, Ctrl+Alt+F9 (recalcular) e salve.")
+        logging.error(
+            "Ainda sem registros. Reabra no Excel, Ctrl+Alt+F9 (recalcular) e salve."
+        )
         return False
 
     out = write_consolidated_csv(records, cfg)
@@ -84,12 +102,20 @@ def process_latest(cfg: Config) -> bool:
         paths = write_csvs_by_pdv(records, cfg)
         logging.info("[OK] %d CSVs por PDV gerados.", len(paths))
 
-    
     reports = write_reports_xlsx_by_pdv(records, cfg)
-    
     logging.info("[OK] %d relatórios Excel por PDV gerados.", len(reports))
-    
-    
+
+    # NOVO: CSVs de DESCONTINUADOS por PDV (BLOCO 3)
+    if discontinued:
+        disc_paths = write_discontinued_csvs_by_pdv(discontinued, cfg)
+        logging.info(
+            "[OK] %d CSVs de descontinuados por PDV gerados em %s",
+            len(disc_paths),
+            (cfg.output_dir / f"{cfg.discontinued_folder_prefix}_{yesterday_str(cfg)}"),
+        )
+    else:
+        logging.info("Nenhum registro de descontinuados encontrado nas abas esperadas.")
+
     try:
         archived = archive_xlsx(xlsx, cfg.archive_dir)
         logging.info("[OK] Arquivado: %s", archived)

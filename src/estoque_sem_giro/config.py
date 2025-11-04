@@ -23,6 +23,9 @@ class Config:
     report_folder_prefix: str
     report_sheet_main: str
     report_sheet_disc: str
+    # para descontinuados 
+    discontinued_folder_prefix: str
+    discontinued_fields: tuple[str, ...]   
 
 def load_config() -> Config:
     # projeto com layout "src/"; o root é 2 níveis acima deste arquivo
@@ -45,6 +48,9 @@ def load_config() -> Config:
         report_folder_prefix="relatorios_finalizado",
         report_sheet_main="Estoque sem Giro",
         report_sheet_disc="Descontinuados",
+        # para descontinuados
+        discontinued_folder_prefix="descontinuados",
+        discontinued_fields=("PDV", "SKU","SKU_PARA" ,"DESCRIÇÃO", "ESTOQUE ATUAL","FASES DO PRODUTO","MARCA"),   
     )
 
 def ensure_dirs(cfg: Config) -> None:

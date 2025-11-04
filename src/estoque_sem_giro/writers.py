@@ -173,3 +173,40 @@ def write_reports_xlsx_by_pdv(records: list[dict], cfg: Config) -> dict[str, Pat
         out_paths[pdv] = path
 
     return out_paths
+
+#DESCONTINUADOS 
+
+def write_discontinued_csvs_by_pdv(records: list[dict], cfg: Config) -> dict[str, Path]:
+    """
+    Gera CSVs de DESCONTINUADOS por PDV em:
+      data/output/descontinuados_DD_MM_AAAA/descontinuados_DD_MM_AAAA_PDV_<pdv>.csv
+
+    Campos (ordem exata): cfg.discontinued_fields
+    """
+    if not records:
+        return {}
+
+    
+    date_str = yesterday_str(cfg)
+    folder = cfg.output_dir / f"{cfg.discontinued_folder_prefix}_{date_str}"
+    folder.mkdir(parents=True, exist_ok=True)
+
+    # agrupar por PDV
+    groups: dict[str, list[dict]] = {}
+    for rec in records:
+        pdv = (rec.get("PDV") or "").strip() or "SEM_PDV"
+        pdv = re.sub(r"[^\w\-]+", "_", pdv)
+        groups.setdefault(pdv, []).append(rec)
+
+    paths: dict[str, Path] = {}
+    for pdv, rows in sorted(groups.items(), key=lambda kv: kv[0]):
+        rows_sorted = sorted(rows, key=lambda r: (r.get("SKU", "")))
+        path = folder / f"{cfg.discontinued_folder_prefix}_{date_str}_PDV_{pdv}.csv"
+        with path.open("w", newline="", encoding="utf-8-sig") as f:
+            w = csv.DictWriter(f, fieldnames=cfg.discontinued_fields)
+            w.writeheader()
+            for rec in rows_sorted:
+                w.writerow({k: rec.get(k, "") for k in cfg.discontinued_fields})
+        paths[pdv] = path
+
+    return paths
