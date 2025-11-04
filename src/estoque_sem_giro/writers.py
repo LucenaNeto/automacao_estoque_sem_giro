@@ -47,97 +47,138 @@ def write_csvs_by_pdv(records: list[dict], cfg: Config) -> dict[str, Path]:
     return paths
 
 
-def write_reports_xlsx_by_pdv(records: list[dict], cfg: Config) -> dict[str, Path]:
+def write_reports_xlsx_by_pdv(records: list[dict], discontinued: list[dict], cfg: Config) -> dict[str, Path]:
     """
-    Cria um arquivo .xlsx por PDV em:
+    Gera um .xlsx por PDV em:
       data/output/relatorio_finalizado_DD_MM_AAAA/relatorio_finalizado_DD_MM_AAAA_PDV_<pdv>.xlsx
 
     Abas:
-      - cfg.report_sheet_main  (preenchida com os dados)
-      - cfg.report_sheet_disc  (vazia por enquanto)
+      - cfg.report_sheet_main (Estoque sem Giro)  -> usa cfg.final_fields
+      - cfg.report_sheet_disc (Descontinuados)    -> usa cfg.discontinued_fields
 
     Layout:
       - Linha 1: título "Grupo Ana Sobral" (mesclado A1:ÚltimaColuna1)
-      - Linha 2: espaço para LOGO (altura maior)
-      - Linha 3: vazia (respiro)
-      - Linha 4: cabeçalho da tabela
-      - A tabela começa na linha 5
-      - Coluna "CURVA": A/B=verde, C=amarelo, D/E=vermelho
+      - Linha 2: LOGO (se cfg.logo_path existir)
+      - Linha 3: vazia
+      - Linha 4: cabeçalho
+      - Dados a partir da linha 5
+      - Coluna "CURVA" na aba principal: A/B=verde, C=amarelo, D/E=vermelho
     """
-    if not records:
-        return {}
+    if records is None:
+        records = []
+    if discontinued is None:
+        discontinued = []
+
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, Alignment, PatternFill
+    from openpyxl.utils import get_column_letter
+    from openpyxl.drawing.image import Image as XLImage
+    import os, re, math
+
     GROUP_NAME = "Grupo Ana Sobral"
     date_str = yesterday_str(cfg)
     folder = cfg.output_dir / f"{cfg.report_folder_prefix}_{date_str}"
     folder.mkdir(parents=True, exist_ok=True)
 
-    # Agrupar por PDV
-    groups: dict[str, list[dict]] = {}
+    # --- helper: inserir logo (A2), escalando para largura/altura máximas ---
+    def _insert_logo(ws, ncols: int):
+        if not cfg.logo_path or not cfg.logo_path.exists():
+            # sem logo, só garante a altura da linha 2 p/ futuro
+            ws.row_dimensions[2].height = cfg.logo_row_height
+            return
+        try:
+            img = XLImage(str(cfg.logo_path))
+        except Exception:
+            ws.row_dimensions[2].height = cfg.logo_row_height
+            return
+
+        # calcula escala para caber: largura máx e altura máx (altura em pontos -> px aprox.)
+        max_w = max(40, int(cfg.logo_max_width_px))
+        max_h_px = int(max(24, cfg.logo_row_height) * 96 / 72)  # 1pt ≈ 96/72 px
+        scale = min(max_w / max(1, img.width), max_h_px / max(1, img.height))
+        img.width = int(img.width * scale)
+        img.height = int(img.height * scale)
+
+        ws.row_dimensions[2].height = cfg.logo_row_height
+        ws.add_image(img, "A2")  # ancora no canto esquerdo; (centralização real exige desenho mais complexo)
+
+    # --- Agrupar por PDV (sanitizado para nome de arquivo) ---
+    def sanitize_pdv(v: str) -> str:
+        v = (v or "").strip() or "SEM_PDV"
+        return re.sub(r"[^\w\-]+", "_", v)
+
+    groups_main: dict[str, list[dict]] = {}
     for rec in records:
-        pdv_raw = (rec.get("PDV") or "").strip() or "SEM_PDV"
-        pdv = re.sub(r"[^\w\-]+", "_", pdv_raw)
-        groups.setdefault(pdv, []).append(rec)
+        groups_main.setdefault(sanitize_pdv(rec.get("PDV", "")), []).append(rec)
 
-    header = list(cfg.final_fields)
-    ncols = len(header)
-    last_col_letter = get_column_letter(ncols)
+    groups_disc: dict[str, list[dict]] = {}
+    for rec in discontinued:
+        groups_disc.setdefault(sanitize_pdv(rec.get("PDV", "")), []).append(rec)
 
-    # larguras sugeridas
-    widths = {
+    all_pdvs = sorted(set(groups_main.keys()) | set(groups_disc.keys()))
+
+    # Larguras sugeridas por coluna
+    widths_main = {
         "PDV": 12, "SKU": 14, "DESCRIÇÃO": 50, "MARCA": 16, "CURVA": 10, "ESTOQUE_ATUAL": 18
     }
+    disc_header = list(cfg.discontinued_fields)
+    widths_disc = {
+        "PDV": 12, "SKU": 14, "SKU_PARA": 18, "DESCRIÇÃO": 50,
+        "ESTOQUE ATUAL": 18, "FASES DO PRODUTO": 24, "MARCA": 14,
+    }
 
-    # Fills para CURVA
-    FILL_GREEN  = PatternFill(fill_type="solid", start_color="C6EFCE", end_color="C6EFCE")  # verde claro
-    FILL_YELLOW = PatternFill(fill_type="solid", start_color="FFEB9C", end_color="FFEB9C")  # amarelo claro
-    FILL_RED    = PatternFill(fill_type="solid", start_color="FFC7CE", end_color="FFC7CE")  # vermelho claro
+    # Cores CURVA
+    FILL_GREEN  = PatternFill(fill_type="solid", start_color="C6EFCE", end_color="C6EFCE")
+    FILL_YELLOW = PatternFill(fill_type="solid", start_color="FFEB9C", end_color="FFEB9C")
+    FILL_RED    = PatternFill(fill_type="solid", start_color="FFC7CE", end_color="FFC7CE")
 
     out_paths: dict[str, Path] = {}
 
-    for pdv, rows in sorted(groups.items(), key=lambda kv: kv[0]):
-        rows_sorted = sorted(rows, key=lambda r: (r.get("SKU", "")))
+    for pdv in all_pdvs:
+        rows_main = sorted(groups_main.get(pdv, []), key=lambda r: (r.get("SKU", "")))
+        rows_disc = sorted(groups_disc.get(pdv, []), key=lambda r: (r.get("SKU", "")))
 
-        # === Workbook e folha principal ===
+        # === Workbook por PDV ===
         wb = Workbook()
+
+        # ---------- ABA PRINCIPAL ----------
         ws = wb.active
         ws.title = cfg.report_sheet_main
+        main_header = list(cfg.final_fields)
+        ncols_main = len(main_header)
+        last_main_col = get_column_letter(ncols_main)
 
-        # --- Cabeçalho visual (linhas 1-3) ---
-        # Título
-        ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=ncols)
+        # topo visual
+        ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=ncols_main)
         cell_title = ws.cell(row=1, column=1, value=GROUP_NAME)
         cell_title.font = Font(bold=True, size=16)
         cell_title.alignment = Alignment(horizontal="center", vertical="center")
 
-        # Espaço para LOGO (só reservando altura por enquanto)
-        ws.row_dimensions[2].height = 40  # facilita inserir logo futuramente
-        # Linha 3 deixamos vazia (respiro)
+        # LOGO na linha 2
+        _insert_logo(ws, ncols_main)
 
-        # --- Cabeçalho da tabela na linha 4 ---
+        # cabeçalho (linha 4)
         header_row = 4
-        for col_idx, col_name in enumerate(header, start=1):
-            c = ws.cell(row=header_row, column=col_idx, value=col_name)
+        for i, col_name in enumerate(main_header, start=1):
+            c = ws.cell(row=header_row, column=i, value=col_name)
             c.font = Font(bold=True)
             c.alignment = Alignment(horizontal="center", vertical="center")
-            ws.column_dimensions[get_column_letter(col_idx)].width = widths.get(col_name, 16)
+            ws.column_dimensions[get_column_letter(i)].width = widths_main.get(col_name, 16)
 
-        ws.freeze_panes = f"A{header_row+1}"  # congela até o cabeçalho
-        ws.auto_filter.ref = f"A{header_row}:{last_col_letter}{header_row}"
+        ws.freeze_panes = f"A{header_row+1}"
+        ws.auto_filter.ref = f"A{header_row}:{last_main_col}{header_row}"
 
-        # --- Dados: começam na linha 5 ---
+        # dados (linha 5+)
         first_data_row = header_row + 1
-        for r_idx, rec in enumerate(rows_sorted, start=first_data_row):
-            for c_idx, col_name in enumerate(header, start=1):
+        for r_idx, rec in enumerate(rows_main, start=first_data_row):
+            for c_idx, col_name in enumerate(main_header, start=1):
                 ws.cell(row=r_idx, column=c_idx, value=rec.get(col_name, ""))
 
-        # --- Coloração condicional (CURVA) ---
-        if "CURVA" in header:
-            curva_col_idx = header.index("CURVA") + 1
+        # coloração CURVA
+        if "CURVA" in main_header:
+            curva_col_idx = main_header.index("CURVA") + 1
             for r in range(first_data_row, ws.max_row + 1):
-                val = ws.cell(row=r, column=curva_col_idx).value
-                if val is None:
-                    continue
-                v = str(val).strip().upper()
+                v = str(ws.cell(row=r, column=curva_col_idx).value or "").strip().upper()
                 if v in {"A", "B"}:
                     ws.cell(row=r, column=curva_col_idx).fill = FILL_GREEN
                 elif v == "C":
@@ -145,27 +186,37 @@ def write_reports_xlsx_by_pdv(records: list[dict], cfg: Config) -> dict[str, Pat
                 elif v in {"D", "E"}:
                     ws.cell(row=r, column=curva_col_idx).fill = FILL_RED
 
-        # === Segunda aba: Descontinuados (com o mesmo topo visual e cabeçalho vazio por enquanto) ===
+        # ---------- ABA DESCONTINUADOS ----------
         ws2 = wb.create_sheet(cfg.report_sheet_disc)
+        ncols_disc = len(disc_header)
+        last_disc_col = get_column_letter(ncols_disc)
 
         # topo visual
-        ws2.merge_cells(start_row=1, start_column=1, end_row=1, end_column=ncols)
+        ws2.merge_cells(start_row=1, start_column=1, end_row=1, end_column=ncols_disc)
         cell_title2 = ws2.cell(row=1, column=1, value=GROUP_NAME)
         cell_title2.font = Font(bold=True, size=16)
         cell_title2.alignment = Alignment(horizontal="center", vertical="center")
-        ws2.row_dimensions[2].height = 40
 
-        # cabeçalho da tabela
-        for col_idx, col_name in enumerate(header, start=1):
-            c = ws2.cell(row=header_row, column=col_idx, value=col_name)
+        # LOGO na linha 2 da aba de descontinuados
+        _insert_logo(ws2, ncols_disc)
+
+        # cabeçalho (linha 4)
+        for i, col_name in enumerate(disc_header, start=1):
+            c = ws2.cell(row=header_row, column=i, value=col_name)
             c.font = Font(bold=True)
             c.alignment = Alignment(horizontal="center", vertical="center")
-            ws2.column_dimensions[get_column_letter(col_idx)].width = widths.get(col_name, 16)
+            ws2.column_dimensions[get_column_letter(i)].width = widths_disc.get(col_name, 16)
 
         ws2.freeze_panes = f"A{header_row+1}"
-        ws2.auto_filter.ref = f"A{header_row}:{last_col_letter}{header_row}"
+        ws2.auto_filter.ref = f"A{header_row}:{last_disc_col}{header_row}"
 
-        # --- Salvar de forma atômica ---
+        # dados (linha 5+)
+        first_disc_row = header_row + 1
+        for r_idx, rec in enumerate(rows_disc, start=first_disc_row):
+            for c_idx, col_name in enumerate(disc_header, start=1):
+                ws2.cell(row=r_idx, column=c_idx, value=rec.get(col_name, ""))
+
+        # salvar atômico
         path = folder / f"{cfg.report_folder_prefix}_{date_str}_PDV_{pdv}.xlsx"
         tmp  = path.with_suffix(path.suffix + ".tmp")
         wb.save(tmp)
@@ -173,6 +224,7 @@ def write_reports_xlsx_by_pdv(records: list[dict], cfg: Config) -> dict[str, Pat
         out_paths[pdv] = path
 
     return out_paths
+
 
 #DESCONTINUADOS 
 

@@ -25,12 +25,17 @@ class Config:
     report_sheet_disc: str
     # para descontinuados 
     discontinued_folder_prefix: str
-    discontinued_fields: tuple[str, ...]   
+    discontinued_fields: tuple[str, ...] 
+    # Logo 
+    logo_path: Path | None
+    logo_max_width: int
+    logo_max_height: int  
 
 def load_config() -> Config:
     # projeto com layout "src/"; o root é 2 níveis acima deste arquivo
     project_root = Path(__file__).resolve().parents[2]
     data_dir = project_root / "data"
+    logo_file = data_dir / "logo.png"
     return Config(
         project_root=project_root,
         data_dir=data_dir,
@@ -50,7 +55,13 @@ def load_config() -> Config:
         report_sheet_disc="Descontinuados",
         # para descontinuados
         discontinued_folder_prefix="descontinuados",
-        discontinued_fields=("PDV", "SKU","SKU_PARA" ,"DESCRIÇÃO", "ESTOQUE ATUAL","FASES DO PRODUTO","MARCA"),   
+        discontinued_fields=("PDV", "SKU","SKU_PARA" ,"DESCRIÇÃO", "ESTOQUE ATUAL","FASES DO PRODUTO","MARCA"),
+        enable_fallback=True,
+        # Logo
+        logo_path=logo_file if logo_file.exists() else None,
+        logo_max_width=380,   
+        logo_max_height=60,
+        
     )
 
 def ensure_dirs(cfg: Config) -> None:

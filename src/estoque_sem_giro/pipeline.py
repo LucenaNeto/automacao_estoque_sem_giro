@@ -36,6 +36,9 @@ def latest_excel(input_dir: Path) -> Path | None:
 def process_latest(cfg: Config) -> bool:
     setup_logging()
     ensure_dirs(cfg)
+    
+    # 1. Lista inicializada
+    discontinued: list[dict] = []
 
     xlsx = latest_excel(cfg.input_dir)
     if not xlsx:
@@ -67,7 +70,7 @@ def process_latest(cfg: Config) -> bool:
                 pass
 
     records = extract_all(wb, cfg.expected_sheets)
-    # extrai descontinuados no mesmo workbook (BLOCO 1 - já estava no seu código)
+    # 2. extrai descontinuados (já estava presente)
     discontinued = extract_discontinued_all(wb, cfg.expected_sheets)
     try:
         wb.close()
@@ -80,7 +83,7 @@ def process_latest(cfg: Config) -> bool:
         try:
             wb2 = open_workbook(xlsx, data_only=False)
             records = extract_all(wb2, cfg.expected_sheets)
-            # NOVO: extrai descontinuados no fallback (BLOCO 2)
+            # 3. extrai descontinuados no fallback (já estava presente)
             discontinued = extract_discontinued_all(wb2, cfg.expected_sheets)
             try:
                 wb2.close()
@@ -102,10 +105,12 @@ def process_latest(cfg: Config) -> bool:
         paths = write_csvs_by_pdv(records, cfg)
         logging.info("[OK] %d CSVs por PDV gerados.", len(paths))
 
-    reports = write_reports_xlsx_by_pdv(records, cfg)
-    logging.info("[OK] %d relatórios Excel por PDV gerados.", len(reports))
+    # 4. Bloco de escrita dos relatórios ATUALIZADO
+    # Relatórios Excel por PDV (preenche aba principal e a de descontinuados)
+    reports = write_reports_xlsx_by_pdv(records, discontinued, cfg)
+    logging.info("[OK] %d relatórios Excel por PDV em %s", len(reports), (cfg.output_dir / f"{cfg.report_folder_prefix}_{yesterday_str(cfg)}"))
 
-    # NOVO: CSVs de DESCONTINUADOS por PDV (BLOCO 3)
+    # CSVs de DESCONTINUADOS por PDV (bloco existente)
     if discontinued:
         disc_paths = write_discontinued_csvs_by_pdv(discontinued, cfg)
         logging.info(
